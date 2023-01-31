@@ -2,6 +2,9 @@ package main
 
 import (
 	"fmt"
+	"regexp"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/go-playground/validator/v10"
@@ -283,6 +286,163 @@ func TestAlias(t *testing.T) {
 	}
 	err := validation.Struct(seller)
 
+	if err != nil {
+		fmt.Println(err.Error())
+	}
+}
+
+// Custom Validation
+func toUpperValidation(field validator.FieldLevel) bool {
+	value, ok := field.Field().Interface().(string)
+	if ok {
+		if value != strings.ToUpper(value) {
+			return false
+		}
+		if len(value) < 5 {
+			return false
+		}
+	}
+	return true
+}
+func TestCustomValidation(t *testing.T) {
+	validation := validator.New()
+	validation.RegisterValidation("toupper", toUpperValidation)
+
+	type Seller struct {
+		Id     string `validate:"required,toupper"`
+		Name   string `validate:"required"`
+		Owner  string `validate:"required"`
+		Slogan string `validate:"required"`
+	}
+	seller := Seller{
+		Id:     "akbar",
+		Name:   "akbar",
+		Owner:  "akbar",
+		Slogan: "akbar",
+	}
+	err := validation.Struct(seller)
+	if err != nil {
+		fmt.Println(err.Error())
+	}
+}
+
+// Custom Validation Parameter
+var regexNumber = regexp.MustCompile("[0-9]")
+
+func mustValidPin(field validator.FieldLevel) bool {
+	length, err := strconv.Atoi(field.Param())
+	if err != nil {
+		panic(err)
+	}
+	value := field.Field().String()
+	if !regexNumber.MatchString(value) {
+		return false
+	}
+	return len(value) == length
+}
+func TestCustomValidationParameter(t *testing.T) {
+	validation := validator.New()
+	validation.RegisterValidation("pin", mustValidPin)
+
+	type Login struct {
+		Phone string `validate:"required,number"`
+		Pin   string `validate:"required,pin=6"`
+	}
+	login := Login{
+		Phone: "0810238032",
+		Pin:   "23456",
+	}
+
+	err := validation.Struct(login)
+	if err != nil {
+		fmt.Println(err.Error())
+	}
+}
+
+// Or Rule
+func TestOrRule(t *testing.T) {
+	type Login struct {
+		Username string `validate:"required,email|numeric"`
+		Password string `validate:"required"`
+	}
+
+	login := Login{
+		Username: "muh",
+		Password: "24234",
+	}
+	validation := validator.New()
+	err := validation.Struct(login)
+	if err != nil {
+		fmt.Println(err.Error())
+	}
+}
+
+// Custom Validation Cross Field
+func mustEqualIgnoreCase(field validator.FieldLevel) bool {
+	value, _, _, ok := field.GetStructFieldOK2()
+	if !ok {
+		panic("field not ok")
+	}
+	firstValue := strings.ToUpper(field.Field().String())
+	secondValue := strings.ToUpper(value.String())
+	return firstValue == secondValue
+}
+
+func TestCustomValidationCrossField(t *testing.T) {
+	validation := validator.New()
+	validation.RegisterValidation("fields_equals_ignore_case", mustEqualIgnoreCase)
+
+	type Login struct {
+		Username string `validate:"required,fields_equals_ignore_case=Email|fields_equals_ignore_case=Phone"`
+		Email    string `validate:"required,email"`
+		Password string `validate:"required"`
+		Phone    string `validate:"required,numeric"`
+	}
+	login := Login{
+		Username: "jalal",
+		Email:    "muh@gmail.com",
+		Password: "jalal08493",
+		Phone:    "08138163449",
+	}
+
+	err := validation.Struct(login)
+	if err != nil {
+		fmt.Println(err.Error())
+	}
+}
+
+// Struct Level Validation
+
+type RegisterRequest struct {
+	Username string `validate:"required"`
+	Email    string `validate:"required,email"`
+	Phone    string `validate:"required,numeric"`
+	Password string `validate:"required"`
+}
+
+func musyValidRegisterStruct(level validator.StructLevel) {
+	registerRequest := level.Current().Interface().(RegisterRequest)
+
+	if registerRequest.Username == registerRequest.Email || registerRequest.Username == registerRequest.Phone {
+		// sukses
+	} else {
+		// gagal
+		level.ReportError(registerRequest.Username, "Username", "Username", "username", "")
+	}
+}
+
+func TestStructLevelValidation(t *testing.T) {
+	validation := validator.New()
+	validation.RegisterStructValidation(musyValidRegisterStruct, RegisterRequest{})
+
+	registerRequest := RegisterRequest{
+		Username: "jalal",
+		Email:    "jalal@gmail.com",
+		Phone:    "08127772424",
+		Password: "jalal4597",
+	}
+
+	err := validation.Struct(registerRequest)
 	if err != nil {
 		fmt.Println(err.Error())
 	}
